@@ -1,0 +1,218 @@
+Here’s a production-ready, OOP-based RAG pipeline template in Python that you can extend as your chatbot grows. It’s structured in a clean, modular way, similar to how professional developers build chatbots.
+
+
+---
+
+Project Structure
+
+chatbot_rag/
+│
+├── data/
+│   ├── loaders.py         # Document loading and chunking
+│
+├── embeddings/
+│   ├── embedder.py        # Embedding models
+│
+├── vector_store/
+│   ├── vector_store.py    # Vector DB (FAISS, Chroma)
+│
+├── llm/
+│   ├── llm_base.py        # LLM interface
+│   ├── openai_llm.py      # OpenAI implementation
+│
+├── pipeline/
+│   ├── rag_pipeline.py    # Retrieval + Generation pipeline
+│
+├── app/
+│   ├── main.py            # CLI or API entry point
+│
+└── config.py              # Global configuration
+
+
+---
+
+1. config.py
+
+from dataclasses import dataclass
+
+@dataclass
+class Config:
+    embedding_model: str = "text-embedding-ada-002"
+    llm_model: str = "gpt-4"
+    top_k: int = 3
+
+
+---
+
+2. data/loaders.py
+
+import os
+from typing import List
+
+class DocumentLoader:
+    def load(self, path: str) -> List[str]:
+        """Load documents from a folder (txt files)."""
+        docs = []
+        for filename in os.listdir(path):
+            if filename.endswith(".txt"):
+                with open(os.path.join(path, filename), "r", encoding="utf-8") as f:
+                    docs.append(f.read())
+        return docs
+
+
+---
+
+3. embeddings/embedder.py
+
+from typing import List
+import openai
+
+class Embedder:
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+
+    def embed(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings using OpenAI API."""
+        response = openai.Embedding.create(input=texts, model=self.model_name)
+        return [item["embedding"] for item in response["data"]]
+
+
+---
+
+4. vector_store/vector_store.py
+
+from typing import List, Tuple
+import numpy as np
+
+class VectorStore:
+    def __init__(self):
+        self.vectors = []
+        self.documents = []
+
+    def add(self, embeddings: List[List[float]], docs: List[str]):
+        self.vectors.extend(embeddings)
+        self.documents.extend(docs)
+
+    def retrieve(self, query_embedding: List[float], top_k: int) -> List[Tuple[str, float]]:
+        """Retrieve top_k similar documents based on cosine similarity."""
+        vectors_np = np.array(self.vectors)
+        query_np = np.array(query_embedding)
+        similarities = vectors_np @ query_np / (np.linalg.norm(vectors_np, axis=1) * np.linalg.norm(query_np))
+        top_indices = np.argsort(similarities)[-top_k:][::-1]
+        return [(self.documents[i], float(similarities[i])) for i in top_indices]
+
+
+---
+
+5. llm/llm_base.py
+
+from typing import List
+
+class BaseLLM:
+    def generate(self, query: str, context_docs: List[str]) -> str:
+        raise NotImplementedError
+
+
+---
+
+6. llm/openai_llm.py
+
+import openai
+from typing import List
+from .llm_base import BaseLLM
+
+class OpenAILLM(BaseLLM):
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+
+    def generate(self, query: str, context_docs: List[str]) -> str:
+        prompt = f"Answer the query using the following documents:\n\n{context_docs}\n\nQuery: {query}"
+        response = openai.ChatCompletion.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+        return response["choices"][0]["message"]["content"]
+
+
+---
+
+7. pipeline/rag_pipeline.py
+
+from typing import List
+from data.loaders import DocumentLoader
+from embeddings.embedder import Embedder
+from vector_store.vector_store import VectorStore
+from llm.llm_base import BaseLLM
+
+class RAGPipeline:
+    def __init__(self, loader: DocumentLoader, embedder: Embedder, store: VectorStore, llm: BaseLLM, top_k: int = 3):
+        self.loader = loader
+        self.embedder = embedder
+        self.store = store
+        self.llm = llm
+        self.top_k = top_k
+
+    def build_index(self, path: str):
+        docs = self.loader.load(path)
+        embeddings = self.embedder.embed(docs)
+        self.store.add(embeddings, docs)
+
+    def query(self, query: str) -> str:
+        q_embed = self.embedder.embed([query])[0]
+        context = [doc for doc, _ in self.store.retrieve(q_embed, self.top_k)]
+        return self.llm.generate(query, context)
+
+
+---
+
+8. app/main.py
+
+from config import Config
+from data.loaders import DocumentLoader
+from embeddings.embedder import Embedder
+from vector_store.vector_store import VectorStore
+from llm.openai_llm import OpenAILLM
+from pipeline.rag_pipeline import RAGPipeline
+
+def main():
+    config = Config()
+    pipeline = RAGPipeline(
+        loader=DocumentLoader(),
+        embedder=Embedder(config.embedding_model),
+        store=VectorStore(),
+        llm=OpenAILLM(config.llm_model),
+        top_k=config.top_k
+    )
+
+    pipeline.build_index("docs/")  # folder with .txt documents
+    while True:
+        query = input("User: ")
+        if query.lower() in ["exit", "quit"]:
+            break
+        answer = pipeline.query(query)
+        print(f"Bot: {answer}")
+
+if __name__ == "__main__":
+    main()
+
+
+---
+
+Next Steps
+
+1. Replace openai calls with your actual API key and installation.
+
+
+2. Add FAISS or Chroma in VectorStore for efficiency.
+
+
+3. Add logging, error handling, and unit tests.
+
+
+
+
+---
+
+Would you like me to create a ZIP file with this project structure and all code pre-filled (ready to run)?
+
