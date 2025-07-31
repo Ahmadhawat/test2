@@ -1,0 +1,120 @@
+Based on the image you provided (which shows the two-step HtmlRAG pruning flow), I’ll write a Python script that mirrors the exact two steps shown:
+
+1. Lossless HTML Cleaning
+
+
+2. Two-Step Block-Tree-Based HTML Pruning
+a. Embedding-based block scoring
+b. Generative fine-grained pruning
+
+
+
+
+---
+
+✅ Python Script: htmlrag_two_step_pruning.py
+
+This script:
+
+Accepts an HTML file
+
+Applies cleaning → embedding pruning → generative pruning
+
+Saves both intermediate and final results
+
+
+import argparse
+from pathlib import Path
+
+from htmlrag.cleaners.html_cleaner import HtmlCleaner
+from htmlrag.blocktree.html_block_tree import HtmlBlockTree
+from htmlrag.embedding.embedder import Embedder
+from htmlrag.generator.generator import Generator
+
+
+def htmlrag_two_step_pruning(html_file_path, question,
+                              embed_model="BAAI/bge-large-en",
+                              gen_model="zstanjj/HTML-Pruner-Phi-3.8B",
+                              lang="en",
+                              sim_threshold=0.2,
+                              output_dir="htmlrag_output"):
+    html_file = Path(html_file_path)
+    with open(html_file, "r", encoding="utf-8") as f:
+        raw_html = f.read()
+
+    print(f"\n📄 Processing: {html_file.name}")
+
+    # Step 1: HTML Cleaning
+    print("🔹 Cleaning HTML...")
+    cleaner = HtmlCleaner(lang=lang)
+    cleaned_html = cleaner.clean_html(raw_html)
+
+    # Step 2a: Embedding-based Block Pruning
+    print("🔹 Embedding-based pruning...")
+    tree = HtmlBlockTree(cleaned_html)
+    tree.build_block_tree()
+
+    embedder = Embedder(model_name=embed_model, lang=lang)
+    tree.embed_blocks(embedder, question)
+    tree.prune_low_similarity_blocks(threshold=sim_threshold)
+
+    # Optionally save intermediate (basic pruned HTML)
+    basic_pruned_html = tree.to_html()
+    intermediate_path = Path(output_dir) / f"{html_file.stem}_basic_pruned.html"
+    intermediate_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(intermediate_path, "w", encoding="utf-8") as f:
+        f.write(basic_pruned_html)
+    print(f"✅ Basic pruned HTML saved to: {intermediate_path}")
+
+    # Step 2b: Generative Fine-Grained Pruning
+    print("🔹 Generative fine-grained pruning...")
+    generator = Generator(model_name=gen_model, lang=lang)
+    tree.prune_with_generator(generator, question)
+
+    final_html = tree.to_html()
+    final_path = Path(output_dir) / f"{html_file.stem}_final_pruned.html"
+    with open(final_path, "w", encoding="utf-8") as f:
+        f.write(final_html)
+    print(f"✅ Final pruned HTML saved to: {final_path}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run HtmlRAG's two-step pruning on a single HTML file.")
+    parser.add_argument("html_file", help="Path to .html or .htm file")
+    parser.add_argument("--question", default="What is this page about?", help="RAG query to guide pruning")
+    parser.add_argument("--embed_model", default="BAAI/bge-large-en", help="Embedding model name")
+    parser.add_argument("--gen_model", default="zstanjj/HTML-Pruner-Phi-3.8B", help="Generative model name")
+    parser.add_argument("--lang", default="en", help="Language code (e.g., en, zh)")
+    parser.add_argument("--threshold", type=float, default=0.2, help="Similarity pruning threshold")
+    parser.add_argument("--output_dir", default="htmlrag_output", help="Directory to save outputs")
+
+    args = parser.parse_args()
+
+    htmlrag_two_step_pruning(args.html_file, args.question,
+                             args.embed_model, args.gen_model,
+                             args.lang, args.threshold, args.output_dir)
+
+
+---
+
+✅ To Run
+
+After installing HtmlRAG:
+
+python htmlrag_two_step_pruning.py yourfile.html \
+  --question "What is this document about?" \
+  --embed_model "BAAI/bge-large-en" \
+  --gen_model "zstanjj/HTML-Pruner-Phi-3.8B"
+
+Output:
+
+yourfile_basic_pruned.html: after Step 1 pruning
+
+yourfile_final_pruned.html: after Step 2 generative pruning
+
+
+
+---
+
+Would you like a version that shows a before/after comparison visually or adds LLM-based final Q&A?
+
