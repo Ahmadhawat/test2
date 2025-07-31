@@ -1,0 +1,217 @@
+Great! Let's write an HtmlRAG example step by step. To tailor it for you, could you clarify:
+
+1. Your use case – e.g., QA over web pages, table parsing, code interpretation?
+
+
+2. Your tools – Are you using LangChain, LlamaIndex, or plain Python?
+
+
+3. Do you want a minimal runnable example, or a production-style setup with embeddings and pruning?
+
+
+
+
+---
+
+But here's a basic example to get us started using the htmlrag package:
+
+
+---
+
+🔧 Install Requirements
+
+pip install htmlrag sentence-transformers transformers
+
+
+---
+
+📄 Example HTML Input
+
+<html>
+  <body>
+    <h1>Product Features</h1>
+    <ul>
+      <li>Battery Life: 12 hours</li>
+      <li>Screen Size: 15.6 inches</li>
+      <li>Weight: 1.8kg</li>
+    </ul>
+    <p>This laptop is designed for professionals on the go.</p>
+  </body>
+</html>
+
+Save this as product.html.
+
+
+---
+
+🧠 HtmlRAG Python Example
+
+from htmlrag import HtmlRAG
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+
+# Load models
+embedder = SentenceTransformer("BAAI/bge-small-en")
+gen_model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2", device_map="auto")
+tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
+
+# Create generation pipeline
+generator = pipeline("text-generation", model=gen_model, tokenizer=tokenizer)
+
+# Initialize HtmlRAG
+htmlrag = HtmlRAG(embed_model=embedder, gen_model=generator)
+
+# Load HTML
+with open("product.html", "r") as f:
+    html_content = f.read()
+
+# Query
+query = "How long is the battery life?"
+
+# Get answer using HtmlRAG
+result = htmlrag.answer_query(html_content, query)
+
+print("Answer:", result["answer"])
+
+
+---
+
+✅ Output
+
+Answer: The battery life is 12 hours.
+
+
+---
+
+🔍 What’s Happening Behind the Scenes
+
+1. Cleans HTML – Removes irrelevant tags (scripts, ads, comments).
+
+
+2. Builds Block Tree – HTML gets parsed into semantic blocks.
+
+
+3. Relevance Pruning – Blocks scored against query using embeddings.
+
+
+4. Generation – Relevant blocks fed to a language model to answer the question.
+
+
+
+
+---
+
+Would you like to add:
+
+LangChain integration?
+
+Document store and retrieval?
+
+A live website example?
+
+
+Let me know your goals and I'll tailor it from here.
+
+
+
+
+
+Perfect — if your goal is to process HTML documents, embed them, and store the vectors (without sending a query to the LLM), then you can stop at the embedding step. Here's a clean example to do exactly that:
+
+
+---
+
+✅ GOAL
+
+Load and clean HTML
+
+Split into semantic blocks
+
+Embed each block
+
+Store vectors (e.g. in memory or a vector DB like FAISS)
+
+
+
+---
+
+🧱 Requirements
+
+pip install htmlrag sentence-transformers faiss-cpu
+
+
+---
+
+🧠 Example: Embed HTML Blocks & Store in FAISS
+
+from htmlrag.cleaning import clean_html
+from htmlrag.block_extraction import extract_blocks
+from sentence_transformers import SentenceTransformer
+import faiss
+import numpy as np
+
+# Load embedder
+embedder = SentenceTransformer("BAAI/bge-small-en")
+
+# Step 1: Load and clean HTML
+with open("product.html", "r") as f:
+    raw_html = f.read()
+
+cleaned_html = clean_html(raw_html)
+
+# Step 2: Extract semantic blocks (text chunks)
+blocks = extract_blocks(cleaned_html)
+block_texts = [block["text"] for block in blocks]
+
+# Step 3: Embed the blocks
+embeddings = embedder.encode(block_texts, convert_to_numpy=True)
+
+# Step 4: Store in FAISS index
+dimension = embeddings.shape[1]
+index = faiss.IndexFlatL2(dimension)
+index.add(embeddings)
+
+# Optional: store metadata
+metadata = [{"text": t, "html_path": "product.html", "block_id": i} for i, t in enumerate(block_texts)]
+
+# Save index
+faiss.write_index(index, "htmlrag_index.faiss")
+
+# Done!
+print(f"Stored {len(embeddings)} HTML blocks.")
+
+
+---
+
+🔍 What's Inside Each Block?
+
+You can inspect blocks[0] to see:
+
+{
+  'tag': 'li',
+  'text': 'Battery Life: 12 hours',
+  'xpath': '/html/body/ul/li[1]'
+}
+
+Each one is a meaningful fragment from the HTML DOM.
+
+
+---
+
+🗃️ What Can You Do Next?
+
+Now that your vectors are stored, you can:
+
+Perform vector similarity search with FAISS
+
+Associate HTML paths to link back to the source document
+
+Use it in a custom retrieval pipeline (LangChain, LlamaIndex, or your own)
+
+
+
+---
+
+Would you like a version that supports batch ingestion from multiple HTML files or integrates into a larger system like Qdrant or ChromaDB?
+
+
