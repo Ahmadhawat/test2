@@ -1,0 +1,77 @@
+To process more HTML files instead of just one (like "symbBear_00001.htm"), you can modify the script to loop through multiple files in a folder.
+
+Here’s how you can expand the code to handle multiple .htm files:
+
+
+---
+
+✅ Updated Steps:
+
+1. Put all your .htm files in a folder (e.g., input_htmls/).
+
+
+2. Create a loop over all .htm files in that folder.
+
+
+3. Generate a corresponding output file for each input file.
+
+
+
+
+---
+
+🔁 Modified Version of Your Script (key parts):
+
+import os
+from htmlrag import clean_html, build_block_tree, EmbedHTMLPruner
+from transformers import AutoTokenizer
+
+# Configuration
+input_folder = "input_htmls"
+output_folder = "pruned_htmls"
+question = "was ist Kode ?"
+
+# Make sure output folder exists
+os.makedirs(output_folder, exist_ok=True)
+
+# Embedding model
+embed_model_name = "sentence-transformers/all-MiniLM-L6-v2"
+embed_pruner = EmbedHTMLPruner(embed_model=embed_model_name)
+tokenizer = AutoTokenizer.from_pretrained(embed_model_name)
+
+# Loop through all .htm files in the input folder
+for filename in os.listdir(input_folder):
+    if filename.endswith(".htm"):
+        input_file = os.path.join(input_folder, filename)
+        output_file = os.path.join(output_folder, filename.replace(".htm", "_pruned.htm"))
+
+        with open(input_file, "r", encoding="utf-8") as f:
+            raw_html = f.read()
+
+        # Clean, parse, rank, prune
+        cleaned_html = clean_html(raw_html)
+        block_tree = build_block_tree(cleaned_html, max_node_words=10)
+        rankings = embed_pruner.calculate_block_rankings(question, cleaned_html, block_tree)
+        pruned_html = embed_pruner.prune_HTML(cleaned_html, block_tree, rankings, tokenizer, max_context_window=60)
+
+        # Save result
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(pruned_html)
+        
+        print(f"✅ Pruned HTML saved to: {output_file}")
+
+
+---
+
+🗂 Folder Structure Example
+
+your_project/
+├── prune_html_ex.py
+├── input_htmls/
+│   ├── symbBear_00001.htm
+│   ├── symbBear_00002.htm
+│   └── ...
+├── pruned_htmls/
+
+Let me know if you want it to process only a few specific files or also include .html files too.
+
