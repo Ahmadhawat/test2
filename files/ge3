@@ -147,3 +147,32 @@ Add FAISS or Qdrant search
 
 You're ready to run this cleanly now!
 
+
+
+def chunk_blocks(blocks, tokenizer, min_tokens=400, max_tokens=600):
+    chunks = []
+    current_chunk = []
+    current_token_count = 0
+
+    for text, path, is_leaf in blocks:
+        if text is None:
+            continue
+        text = text.strip()
+        if not text:
+            continue
+
+        token_count = len(tokenizer.tokenize(text))
+        if current_token_count + token_count > max_tokens:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+            current_chunk = [text]
+            current_token_count = token_count
+        else:
+            current_chunk.append(text)
+            current_token_count += token_count
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks
+
