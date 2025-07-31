@@ -1,0 +1,165 @@
+Perfect — here is a self-contained Python script you can copy and run locally. It will:
+
+1. Process all .html / .htm files in a directory
+
+
+2. Clean and chunk the HTML (HtmlRAG-style)
+
+
+3. Add anchor IDs to headings
+
+
+4. Generate embeddings using a local model
+
+
+5. Store vectors in FAISS
+
+
+6. Save metadata including:
+
+Plain text
+
+Clean HTML
+
+File path and section link
+
+
+
+
+
+---
+
+✅ Python Script (Copy and Paste)
+
+import os
+import json
+import uuid
+import faiss
+import numpy as np
+from bs4 import BeautifulSoup
+from sentence_transformers import SentenceTransformer
+
+# ===== CONFIGURATION =====
+INPUT_DIR = r"C:\Docs\HelpFiles"  # 🔁 Change to your HTML directory
+OUTPUT_INDEX = "htmlrag_vectors.faiss"
+OUTPUT_METADATA = "htmlrag_metadata.json"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # or any local SBERT-compatible model
+
+# ===== INITIAL SETUP =====
+model = SentenceTransformer(EMBEDDING_MODEL)
+dimension = model.get_sentence_embedding_dimension()
+index = faiss.IndexFlatL2(dimension)
+metadata = []
+
+# ===== HELPERS =====
+def slugify(text):
+    return (
+        text.lower()
+        .strip()
+        .replace(" ", "-")
+        .replace(":", "")
+        .replace("?", "")
+        .replace(".", "")
+        .replace("/", "")
+        .replace("'", "")
+    )
+
+def clean_html(soup):
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+        tag.decompose()
+    return soup
+
+def process_html_file(filepath):
+    with open(filepath, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    soup = BeautifulSoup(html, "html.parser")
+    soup = clean_html(soup)
+
+    base_uri = "file:///" + filepath.replace("\\", "/")
+    all_tags = soup.find_all(["h2", "h3", "p", "ul", "ol", "table"])
+    chunks = []
+    current_chunk = ""
+    current_anchor = ""
+
+    for tag in all_tags:
+        if tag.name in ["h2", "h3"]:
+            if current_chunk:
+                chunks.append((current_anchor, current_chunk))
+            heading_text = tag.get_text()
+            anchor_id = slugify(heading_text)
+            tag["id"] = anchor_id  # Add anchor for linking
+            current_anchor = anchor_id
+            current_chunk = str(tag)
+        else:
+            current_chunk += str(tag)
+
+    if current_chunk:
+        chunks.append((current_anchor, current_chunk))
+
+    for anchor, html_block in chunks:
+        text = BeautifulSoup(html_block, "html.parser").get_text(separator=" ", strip=True)
+        vector = model.encode(text)
+        index.add(np.array([vector], dtype=np.float32))
+        metadata.append({
+            "id": str(uuid.uuid4()),
+            "file": filepath,
+            "anchor": anchor,
+            "url": f"{base_uri}#{anchor}" if anchor else base_uri,
+            "text": text,
+            "html": html_block
+        })
+
+# ===== PROCESS ALL FILES =====
+for filename in os.listdir(INPUT_DIR):
+    if filename.endswith(".html") or filename.endswith(".htm"):
+        full_path = os.path.join(INPUT_DIR, filename)
+        process_html_file(full_path)
+
+# ===== SAVE VECTOR INDEX AND METADATA =====
+faiss.write_index(index, OUTPUT_INDEX)
+with open(OUTPUT_METADATA, "w", encoding="utf-8") as f:
+    json.dump(metadata, f, indent=2)
+
+print(f"✅ Vector index saved to: {OUTPUT_INDEX}")
+print(f"✅ Metadata saved to: {OUTPUT_METADATA}")
+
+
+---
+
+🛠️ What You Need Installed
+
+Before running this script, install dependencies:
+
+pip install sentence-transformers faiss-cpu beautifulsoup4
+
+
+---
+
+📦 Output Files
+
+htmlrag_vectors.faiss → FAISS vector index
+
+htmlrag_metadata.json → Metadata with:
+
+text, html, url, anchor, file
+
+
+
+
+---
+
+✅ What You Can Do With It
+
+Use FAISS to retrieve relevant sections by question
+
+Pass the matching chunk’s HTML to your 70B LLM
+
+Include url in the chatbot answer (e.g., file:///C:/Docs/...#section)
+
+
+
+---
+
+Let me know if you want the next step: connecting this to a retrieval + LLM pipeline!
+
