@@ -1,0 +1,149 @@
+Perfect — let me explain clearly and rewrite the full script with everything included inside, no need for external --lang, --output, or any command-line arguments.
+
+
+---
+
+✅ Why We Used --lang?
+
+The HtmlRAG toolkit supports optional language-specific HTML cleaning (e.g. keeping content tags that depend on the language). If you're only working with German, we can hardcode "de" and remove the need for --lang.
+
+
+---
+
+✅ Your Final Script — Clean, Simple, No Args
+
+📄 htmlrag_vectorize_offline.py
+
+import json
+from pathlib import Path
+from htmlrag import clean_html, build_block_tree
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
+
+
+def chunk_blocks(blocks, tokenizer, min_tokens=400, max_tokens=600):
+    chunks = []
+    current_chunk = []
+    current_token_count = 0
+
+    for text, path, is_leaf in blocks:
+        text = text.strip()
+        if not text:
+            continue
+
+        token_count = len(tokenizer.tokenize(text))
+        if current_token_count + token_count > max_tokens:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+            current_chunk = [text]
+            current_token_count = token_count
+        else:
+            current_chunk.append(text)
+            current_token_count += token_count
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks
+
+
+def html_to_vectors(html_file_path):
+    # 🔧 Configuration
+    embed_model_id = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    lang = "de"
+    min_tokens = 400
+    max_tokens = 600
+    output_path = "vectors.json"
+
+    # 📄 Read HTML file
+    html_path = Path(html_file_path)
+    if not html_path.exists():
+        raise FileNotFoundError(f"❌ File not found: {html_path}")
+
+    raw_html = html_path.read_text(encoding="utf-8")
+    print(f"\n📄 Processing: {html_path.name}")
+
+    # 🧹 Step 1: Clean HTML
+    cleaned_html = clean_html(raw_html, lang=lang)
+
+    # 🧱 Step 2: Build block tree
+    blocks, _ = build_block_tree(cleaned_html)
+    print(f"🧱 Found {len(blocks)} blocks")
+
+    # ✂️ Step 3: Chunking
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(embed_model_id, local_files_only=True)
+        print("✅ Tokenizer loaded locally")
+    except:
+        print("🌐 Tokenizer not found locally. Downloading...")
+        tokenizer = AutoTokenizer.from_pretrained(embed_model_id)
+
+    chunks = chunk_blocks(blocks, tokenizer, min_tokens, max_tokens)
+    print(f"✂️ Created {len(chunks)} chunks")
+
+    if not chunks:
+        print("⚠️ No valid text to embed.")
+        return
+
+    # 🧠 Step 4: Load embedding model
+    try:
+        model = SentenceTransformer(embed_model_id)
+        print("✅ Embedding model loaded")
+    except Exception as e:
+        raise RuntimeError(f"❌ Could not load model: {e}")
+
+    # 🔗 Step 5: Embed
+    vectors = model.encode(chunks)
+
+    # 💾 Step 6: Save to JSON
+    results = [
+        {"chunk_id": i, "text": chunk, "vector": vector.tolist()}
+        for i, (chunk, vector) in enumerate(zip(chunks, vectors))
+    ]
+
+    Path(output_path).write_text(json.dumps(results, indent=2), encoding="utf-8")
+    print(f"✅ Saved {len(results)} vectors to {output_path}")
+
+
+# 🔽 Main Entry
+if __name__ == "__main__":
+    # 👇 Edit this to match your HTML file
+    html_file = "index.html"  # Just change this filename if needed
+
+    html_to_vectors(html_file)
+
+
+---
+
+✅ How to Use
+
+1. Save the script as htmlrag_vectorize_offline.py
+
+
+2. Put index.html (or any file) in the same folder
+
+
+3. Run it:
+
+python htmlrag_vectorize_offline.py
+
+
+
+✅ No arguments
+✅ Hardcoded for German
+✅ Downloads the model once, then runs offline forever
+
+
+---
+
+Let me know if you want to:
+
+Convert the output to CSV
+
+Automatically embed a whole folder of .html files
+
+Add FAISS or Qdrant search
+
+
+You're ready to run this cleanly now!
+
