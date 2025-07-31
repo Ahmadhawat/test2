@@ -1,0 +1,301 @@
+Here is a complete Python script that:
+
+Takes a folder path containing .html or .htm files
+
+Applies the HtmlRAG pipeline manually, step by step:
+
+✅ HTML Cleaning
+
+✅ Block tree creation
+
+✅ Embedding-based pruning
+
+✅ Generative pruning
+
+
+Outputs the final pruned HTML for each file
+
+
+
+---
+
+🧾 Full Script: manual_htmlrag_pipeline.py
+
+import os
+from pathlib import Path
+
+from htmlrag.cleaners.html_cleaner import HtmlCleaner
+from htmlrag.blocktree.html_block_tree import HtmlBlockTree
+from htmlrag.embedding.embedder import Embedder
+from htmlrag.generator.generator import Generator
+
+
+def process_html_file(html_path, question, embed_model, gen_model, lang="en",
+                      sim_threshold=0.2):
+    with open(html_path, "r", encoding="utf-8") as f:
+        raw_html = f.read()
+
+    print(f"🔹 Processing: {html_path.name}")
+
+    # Step 1: Clean HTML
+    cleaner = HtmlCleaner(lang=lang)
+    cleaned_html = cleaner.clean_html(raw_html)
+
+    # Step 2: Build block tree
+    tree = HtmlBlockTree(cleaned_html)
+    tree.build_block_tree()
+
+    # Step 3: Embed & prune using similarity
+    embedder = Embedder(model_name=embed_model, lang=lang)
+    tree.embed_blocks(embedder, question)
+    tree.prune_low_similarity_blocks(threshold=sim_threshold)
+
+    # Step 4: Generative pruning
+    generator = Generator(model_name=gen_model, lang=lang)
+    tree.prune_with_generator(generator, question)
+
+    # Step 5: Export pruned HTML
+    pruned_html = tree.to_html()
+    return pruned_html
+
+
+def run_on_folder(folder_path, question="What is this page about?",
+                  embed_model="BAAI/bge-large-en",
+                  gen_model="zstanjj/HTML-Pruner-Phi-3.8B",
+                  lang="en", sim_threshold=0.2,
+                  output_folder="output_htmlrag"):
+    folder = Path(folder_path)
+    html_files = list(folder.glob("*.html")) + list(folder.glob("*.htm"))
+
+    if not html_files:
+        print(f"❌ No HTML files found in: {folder}")
+        return
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    for html_file in html_files:
+        try:
+            pruned_html = process_html_file(html_file, question, embed_model, gen_model, lang, sim_threshold)
+            output_file = output_path / f"{html_file.stem}_pruned.html"
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(pruned_html)
+            print(f"✅ Saved: {output_file}")
+        except Exception as e:
+            print(f"❌ Error processing {html_file.name}: {e}")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Manual HtmlRAG pipeline for a folder of HTML files.")
+    parser.add_argument("folder_path", help="Path to folder containing .html or .htm files")
+    parser.add_argument("--question", default="What is this page about?", help="Question to guide pruning")
+    parser.add_argument("--embed_model", default="BAAI/bge-large-en", help="Embedding model")
+    parser.add_argument("--gen_model", default="zstanjj/HTML-Pruner-Phi-3.8B", help="Generative model")
+    parser.add_argument("--lang", default="en", help="Language of documents")
+    parser.add_argument("--threshold", type=float, default=0.2, help="Embedding similarity pruning threshold")
+    parser.add_argument("--output_folder", default="output_htmlrag", help="Where to save pruned HTML files")
+
+    args = parser.parse_args()
+    run_on_folder(args.folder_path, args.question, args.embed_model, args.gen_model,
+                  args.lang, args.threshold, args.output_folder)
+
+
+---
+
+✅ How to Run
+
+Make sure HtmlRAG is installed (pip install -e . from the repo), then run:
+
+python manual_htmlrag_pipeline.py ./html_pages \
+  --question "What is this document about?" \
+  --embed_model "BAAI/bge-large-en" \
+  --gen_model "zstanjj/HTML-Pruner-Phi-3.8B"
+
+This will create cleaned & pruned HTML versions in the output_htmlrag/ folder.
+
+
+---
+
+Would you like it extended to output JSON answers from a final LLM step (like GPT or Mistral)?
+
+
+
+
+Certainly! Here's a Python script that:
+
+1. Takes a folder path as input.
+
+
+2. Finds all .html or .htm files in that folder.
+
+
+3. Runs HtmlRAG on each file using the run_htmlrag_pipeline.py script (as per HtmlRAG's GitHub usage).
+
+
+
+
+---
+
+✅ Requirements
+
+Python installed
+
+HtmlRAG cloned or installed (pip install htmlrag)
+
+Ensure dependencies like transformers, bs4, and torch are installed
+
+Pretrained models used for embedding and generation (can be customized)
+
+
+
+---
+
+🧾 Script: run_htmlrag_on_folder.py
+
+import os
+import subprocess
+from pathlib import Path
+
+def run_htmlrag_on_folder(folder_path, 
+                          embed_model="BAAI/bge-large-en", 
+                          gen_model="zstanjj/HTML-Pruner-Phi-3.8B", 
+                          lang="en", 
+                          htmlrag_script="run_htmlrag_pipeline.py"):
+    """
+    Runs HtmlRAG on all .html/.htm files in a specified folder.
+    """
+    folder = Path(folder_path)
+    html_files = list(folder.glob("*.htm")) + list(folder.glob("*.html"))
+
+    if not html_files:
+        print(f"No HTML files found in: {folder}")
+        return
+
+    for html_file in html_files:
+        print(f"Processing: {html_file}")
+        command = [
+            "python", htmlrag_script,
+            "--html_file", str(html_file),
+            "--question", "What is this document about?",
+            "--lang", lang,
+            "--embed_model", embed_model,
+            "--gen_model", gen_model
+        ]
+
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error processing {html_file.name}: {e}")
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run HtmlRAG on HTML files in a folder.")
+    parser.add_argument("folder_path", help="Path to folder containing .html/.htm files")
+    parser.add_argument("--embed_model", default="BAAI/bge-large-en", help="Embedding model name")
+    parser.add_argument("--gen_model", default="zstanjj/HTML-Pruner-Phi-3.8B", help="Generative model name")
+    parser.add_argument("--lang", default="en", help="Language of the documents")
+    parser.add_argument("--htmlrag_script", default="run_htmlrag_pipeline.py", help="Path to HtmlRAG's runner script")
+
+    args = parser.parse_args()
+    run_htmlrag_on_folder(args.folder_path, args.embed_model, args.gen_model, args.lang, args.htmlrag_script)
+
+
+---
+
+🛠️ Example Usage
+
+From command line (terminal):
+
+python run_htmlrag_on_folder.py ./my_html_folder \
+  --question "What is this document about?" \
+  --embed_model "BAAI/bge-large-en" \
+  --gen_model "zstanjj/HTML-Pruner-Phi-3.8B"
+
+
+---
+
+Would you like me to modify this to output results to a file or support batch questions?
+
+
+
+Great question — no, the script I just shared runs HtmlRAG’s official pipeline via run_htmlrag_pipeline.py, which internally handles:
+
+1. ✅ HTML Cleaning
+
+
+2. ✅ Two-Step Block-Tree-Based HTML Pruning
+
+
+
+These steps are built into HtmlRAG's pipeline.
+
+
+---
+
+🔍 Breakdown of What Happens Internally
+
+When you run:
+
+python run_htmlrag_pipeline.py --html_file your_file.html ...
+
+HtmlRAG does the following:
+
+
+---
+
+🧹 1. HTML Cleaning
+
+Removes irrelevant content (scripts, styles, comments, meta tags).
+
+Simplifies HTML (e.g., strips unnecessary nesting or attributes).
+
+Keeps only semantically relevant structure (e.g., headings, paragraphs, tables, links).
+
+
+✔️ Done automatically in htmlrag/cleaners/html_cleaner.py.
+
+
+---
+
+🌲 2. Two-Step Block-Tree-Based HTML Pruning
+
+Step 1: Embedding-based scoring
+
+Constructs a block tree of HTML elements (e.g., divs/sections as nodes).
+
+Uses an embedding model (like BAAI/bge-large-en) to score blocks by similarity to the query.
+
+
+Step 2: Generative model pruning
+
+Uses a generative LLM (e.g., zstanjj/HTML-Pruner-Phi-3.8B) to score each block's relevance and context contribution.
+
+Final blocks are kept if they pass pruning thresholds and contribute to the answer.
+
+
+✔️ All handled in htmlrag/pipeline/htmlrag_pipeline.py.
+
+
+---
+
+✅ So to Answer Directly:
+
+Yes — if you use run_htmlrag_pipeline.py, you are automatically benefiting from:
+
+HTML cleaning
+
+Two-step block pruning
+
+Embedding + generative scoring
+
+Output formatted for RAG-ready models
+
+
+
+---
+
+Would you like an example of how to call these individual steps manually in code, rather than through the script? Or maybe a walkthrough of the pipeline internals?
+
