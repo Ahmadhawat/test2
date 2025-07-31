@@ -1,0 +1,164 @@
+Great! If you want to avoid calling remote models (like embedding or generative models) and instead:
+
+Extract vector representations locally
+
+Chunk the HTML based on its structure (400–600 tokens per chunk)
+
+Output a dataset of vectors (e.g. as JSON or CSV)
+
+
+Then here's what we’ll do:
+
+
+---
+
+✅ What This Script Will Do
+
+1. Clean the HTML using HtmlRAG's HtmlCleaner
+
+
+2. Construct block tree using HtmlBlockTree
+
+
+3. Chunk the tree into ~400–600 token chunks (based on word count or simple heuristics)
+
+
+4. Vectorize the chunks using a local embedding model (like BAAI/bge-small-en via sentence-transformers)
+
+
+5. Export the results as a vector dataset (JSON or CSV)
+
+
+
+
+---
+
+🧾 Script: html_chunk_vectorizer.py
+
+import os
+import json
+from pathlib import Path
+from htmlrag.cleaners.html_cleaner import HtmlCleaner
+from htmlrag.blocktree.html_block_tree import HtmlBlockTree
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
+import numpy as np
+
+def chunk_blocks(blocks, tokenizer, min_tokens=400, max_tokens=600):
+    chunks = []
+    current_chunk = []
+    current_token_count = 0
+
+    for block in blocks:
+        text = block["text"].strip()
+        if not text:
+            continue
+
+        token_count = len(tokenizer.tokenize(text))
+        if current_token_count + token_count > max_tokens:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+            current_chunk = [text]
+            current_token_count = token_count
+        else:
+            current_chunk.append(text)
+            current_token_count += token_count
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks
+
+
+def html_to_vectors(html_path, output_path="vectors.json",
+                    embed_model="BAAI/bge-small-en",
+                    lang="en", min_tokens=400, max_tokens=600):
+    html_path = Path(html_path)
+    with open(html_path, "r", encoding="utf-8") as f:
+        raw_html = f.read()
+
+    print(f"🔹 Processing {html_path.name}")
+
+    # Step 1: Clean HTML
+    cleaner = HtmlCleaner(lang=lang)
+    cleaned_html = cleaner.clean_html(raw_html)
+
+    # Step 2: Build block tree
+    tree = HtmlBlockTree(cleaned_html)
+    tree.build_block_tree()
+    block_data = tree.get_blocks_text()
+
+    # Step 3: Chunking
+    tokenizer = AutoTokenizer.from_pretrained(embed_model)
+    chunks = chunk_blocks(block_data, tokenizer, min_tokens, max_tokens)
+
+    print(f"✅ Created {len(chunks)} chunks")
+
+    # Step 4: Embed with local model
+    model = SentenceTransformer(embed_model)
+    vectors = model.encode(chunks)
+
+    # Step 5: Save as JSON
+    results = [
+        {"chunk_id": i, "text": chunk, "vector": vector.tolist()}
+        for i, (chunk, vector) in enumerate(zip(chunks, vectors))
+    ]
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+
+    print(f"✅ Saved vectors to {output_path}")
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Chunk and vectorize HTML using HtmlRAG + local model")
+    parser.add_argument("html_file", help="Path to .html file")
+    parser.add_argument("--output", default="vectors.json", help="Path to save output JSON")
+    parser.add_argument("--embed_model", default="BAAI/bge-small-en", help="Local embedding model")
+    parser.add_argument("--lang", default="en", help="Language of HTML")
+    parser.add_argument("--min_tokens", type=int, default=400, help="Min token size per chunk")
+    parser.add_argument("--max_tokens", type=int, default=600, help="Max token size per chunk")
+
+    args = parser.parse_args()
+    html_to_vectors(args.html_file, args.output, args.embed_model,
+                    args.lang, args.min_tokens, args.max_tokens)
+
+
+---
+
+✅ To Run
+
+Install dependencies:
+
+pip install htmlrag sentence-transformers transformers
+
+Then run:
+
+python html_chunk_vectorizer.py your_file.html
+
+You’ll get a vectors.json file like:
+
+[
+  {
+    "chunk_id": 0,
+    "text": "This is the first HTML chunk ...",
+    "vector": [0.123, -0.456, ...]
+  },
+  ...
+]
+
+
+---
+
+💡 You Can Use These Vectors For:
+
+Vector search / semantic similarity
+
+RAG document store (e.g., in FAISS, Weaviate, Qdrant)
+
+Manual filtering or inspection
+
+
+Would you like CSV output instead, or automatic FAISS index building?
+
