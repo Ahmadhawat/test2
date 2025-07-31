@@ -1,0 +1,178 @@
+Here is a fully working offline script that uses the official HtmlRAG toolkit and a local embedding model to:
+
+1. Clean and parse the HTML with clean_html + build_block_tree
+
+
+2. Chunk the content (400–600 tokens)
+
+
+3. Embed using a locally downloaded model like intfloat/e5-small-v2
+
+
+4. Save the results in vectors.json
+
+
+
+
+---
+
+✅ Final Script: htmlrag_offline_vectorizer.py
+
+import json
+from pathlib import Path
+from htmlrag import clean_html, build_block_tree
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
+
+def chunk_blocks(blocks, tokenizer, min_tokens=400, max_tokens=600):
+    chunks = []
+    current_chunk = []
+    current_token_count = 0
+
+    for text, path, is_leaf in blocks:
+        text = text.strip()
+        if not text:
+            continue
+
+        token_count = len(tokenizer.tokenize(text))
+        if current_token_count + token_count > max_tokens:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+            current_chunk = [text]
+            current_token_count = token_count
+        else:
+            current_chunk.append(text)
+            current_token_count += token_count
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks
+
+
+def html_to_vectors(html_path,
+                    output_path="vectors.json",
+                    embed_model_path="local_model",
+                    lang="en",
+                    min_tokens=400,
+                    max_tokens=600):
+    html_path = Path(html_path)
+    if not html_path.exists():
+        raise FileNotFoundError(f"HTML file not found: {html_path}")
+
+    raw_html = html_path.read_text(encoding="utf-8")
+
+    print(f"\n📄 Processing: {html_path.name}")
+
+    # Step 1: Clean HTML using HtmlRAG
+    cleaned_html = clean_html(raw_html, lang=lang)
+
+    # Step 2: Block tree generation
+    blocks, simplified_html = build_block_tree(cleaned_html)
+    print(f"🧱 Found {len(blocks)} text blocks")
+
+    # Step 3: Tokenizer from local model path
+    tokenizer = AutoTokenizer.from_pretrained(embed_model_path, local_files_only=True)
+
+    # Step 4: Chunking
+    chunks = chunk_blocks(blocks, tokenizer, min_tokens, max_tokens)
+    print(f"✂️ Chunked into {len(chunks)} segments")
+
+    if not chunks:
+        print("⚠️ No valid content to embed.")
+        return
+
+    # Step 5: Load local embedding model
+    model = SentenceTransformer(embed_model_path)
+
+    # Step 6: Embed chunks
+    vectors = model.encode(chunks)
+
+    # Step 7: Save results
+    output_data = [
+        {"chunk_id": i, "text": text, "vector": vector.tolist()}
+        for i, (text, vector) in enumerate(zip(chunks, vectors))
+    ]
+
+    Path(output_path).write_text(json.dumps(output_data, indent=2), encoding="utf-8")
+    print(f"✅ Saved embeddings to {output_path}")
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Offline HTML chunking & vector embedding with HtmlRAG")
+    parser.add_argument("html_file", help="Path to .html or .htm file")
+    parser.add_argument("--output", default="vectors.json", help="Path to save output vector JSON")
+    parser.add_argument("--embed_model_path", default="local_model", help="Path to local sentence embedding model")
+    parser.add_argument("--lang", default="en", help="Language of HTML (e.g., en or de)")
+    parser.add_argument("--min_tokens", type=int, default=400)
+    parser.add_argument("--max_tokens", type=int, default=600)
+    args = parser.parse_args()
+
+    html_to_vectors(
+        html_path=args.html_file,
+        output_path=args.output,
+        embed_model_path=args.embed_model_path,
+        lang=args.lang,
+        min_tokens=args.min_tokens,
+        max_tokens=args.max_tokens
+    )
+
+
+---
+
+✅ How to Run Offline
+
+1. Install dependencies once (online):
+
+pip install htmlrag sentence-transformers transformers
+
+
+2. Download embedding model once:
+
+from sentence_transformers import SentenceTransformer
+SentenceTransformer("intfloat/e5-small-v2")  # This will cache locally
+
+
+3. Move model folder (e.g. ~/.cache/torch/sentence_transformers/intfloat_e5-small-v2/) to your offline machine, e.g.:
+
+/offline_models/e5-small-v2/
+
+
+4. Run offline like this:
+
+python htmlrag_offline_vectorizer.py ./sample.html \
+  --embed_model_path /offline_models/e5-small-v2 \
+  --output ./vectors.json \
+  --lang de
+
+
+
+
+---
+
+✅ Output
+
+You’ll get a file like:
+
+[
+  {
+    "chunk_id": 0,
+    "text": "Dies ist ein HTML-Abschnitt...",
+    "vector": [0.213, -0.412, ...]
+  },
+  ...
+]
+
+
+---
+
+Would you like me to show how to:
+
+Turn this into a FAISS search index?
+
+Export CSV instead?
+
+Zip and share the offline model directory structure example?
+
+
