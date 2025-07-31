@@ -176,3 +176,123 @@ def chunk_blocks(blocks, tokenizer, min_tokens=400, max_tokens=600):
 
     return chunks
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import json
+from pathlib import Path
+from htmlrag import clean_html, build_block_tree
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
+
+
+# ✅ Safe string cleaner
+def safe_strip(s):
+    return s.strip() if isinstance(s, str) else ""
+
+
+# ✅ Chunk blocks into 400–600 token segments
+def chunk_blocks(blocks, tokenizer, min_tokens=400, max_tokens=600):
+    chunks = []
+    current_chunk = []
+    current_token_count = 0
+
+    for block_text, path, is_leaf in blocks:
+        block_text = safe_strip(block_text)
+        if not block_text:
+            continue
+
+        token_count = len(tokenizer.tokenize(block_text))
+        if current_token_count + token_count > max_tokens:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+            current_chunk = [block_text]
+            current_token_count = token_count
+        else:
+            current_chunk.append(block_text)
+            current_token_count += token_count
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks
+
+
+# ✅ Main processing function
+def html_to_vectors(html_file_path):
+    # === Configuration ===
+    embed_model_id = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    lang = "de"
+    min_tokens = 400
+    max_tokens = 600
+    output_path = "vectors.json"
+
+    # === Load HTML ===
+    html_path = Path(html_file_path)
+    if not html_path.exists():
+        raise FileNotFoundError(f"❌ File not found: {html_path}")
+
+    raw_html = html_path.read_text(encoding="utf-8")
+    print(f"\n📄 Processing: {html_path.name}")
+
+    # === Step 1: Clean HTML ===
+    cleaned_html = clean_html(raw_html, lang=lang)
+
+    # === Step 2: Build block tree ===
+    blocks, _ = build_block_tree(cleaned_html)
+    print(f"🧱 Found {len(blocks)} blocks")
+
+    # === Step 3: Load tokenizer ===
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(embed_model_id, local_files_only=True)
+        print("✅ Tokenizer loaded from cache")
+    except:
+        print("🌐 Tokenizer not cached. Downloading...")
+        tokenizer = AutoTokenizer.from_pretrained(embed_model_id)
+
+    # === Step 4: Chunk text ===
+    chunks = chunk_blocks(blocks, tokenizer, min_tokens, max_tokens)
+    print(f"✂️ Chunked into {len(chunks)} segments")
+
+    if not chunks:
+        print("⚠️ No valid chunks to embed. Exiting.")
+        return
+
+    # === Step 5: Load model ===
+    try:
+        model = SentenceTransformer(embed_model_id)
+        print("✅ Embedding model loaded")
+    except Exception as e:
+        raise RuntimeError(f"❌ Could not load model: {e}")
+
+    # === Step 6: Embed ===
+    vectors = model.encode(chunks)
+
+    # === Step 7: Save vectors ===
+    results = [
+        {"chunk_id": i, "text": chunk, "vector": vector.tolist()}
+        for i, (chunk, vector) in enumerate(zip(chunks, vectors))
+    ]
+
+    Path(output_path).write_text(json.dumps(results, indent=2), encoding="utf-8")
+    print(f"✅ Saved {len(results)} vectors to {output_path}")
+
+
+# ✅ Run
+if __name__ == "__main__":
+    html_file = r"C:\Entwicklung\1AAAEntwicklung\KI\C1CH\RAG\htmlrag2\index.html"  # 🔁 Set your full HTML path here
+    html_to_vectors(html_file)
